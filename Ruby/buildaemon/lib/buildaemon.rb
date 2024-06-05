@@ -28,28 +28,31 @@ module Buildaemon
     def self.ToColorString(colorCode, string)
       "\e[#{colorCode}m#{string}\e[0m"
     end
-
-    def self.Print(ground, color, string)
-      print Terminal.ToColorString(ground + color, string)
-    end
-
-    def self.Puts(ground, color, string)
-      puts Terminal.ToColorString(ground + color, string)
-    end
   end
 
   def self.Execute(command)
     timestamp = DateTime.now.strftime("%y/%m/%d %H:%M:%S")
-    Terminal.Puts(Terminal::Ground::Foreground, Terminal::Color::Green, "[#{timestamp}] $ #{command}")
+    puts Terminal.ToColorString(Terminal::Ground::Foreground + Terminal::Color::Green, "[#{timestamp}] $ #{command}")
     Open3.popen3(command){|i, o, e, w|
       i.close
-      o.each{|line| STDOUT.puts line.toutf8}
-      e.each{|line| STDERR.puts line.toutf8}
-      exitStatus = w.value.exitstatus
+      threads = [
+        Thread.new{
+          while (line = o.gets) do
+            STDOUT.puts line.toutf8
+          end
+        },
+        Thread.new{
+          while (line = e.gets) do
+            STDERR.puts line.toutf8
+          end
+        }
+      ].each{|thread| thread.join}
+      status = w.value
+      exitCode = status.exitstatus.nil? ? status.termsig : status.exitstatus
       if block_given?
-        yield(exitStatus)
-      elsif exitStatus != 0
-        exit(exitStatus)
+        yield(status)
+      elsif exitCode != 0
+        exit(exitCode)
       end
     }
   end
