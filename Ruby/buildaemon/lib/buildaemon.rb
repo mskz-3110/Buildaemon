@@ -25,35 +25,31 @@ module Buildaemon
       White   = 7
     end
 
-    def self.ToColorString(colorCode, string)
-      "\e[#{colorCode}m#{string}\e[0m"
+    def self.ToColorString(colorCode, message)
+      "\e[#{colorCode}m#{message}\e[0m"
     end
   end
 
   def self.Execute(command)
     timestamp = DateTime.now.strftime("%y/%m/%d %H:%M:%S")
     puts Terminal.ToColorString(Terminal::Ground::Foreground + Terminal::Color::Green, "[#{timestamp}] $ #{command}")
-    Open3.popen3(command){|i, o, e, w|
-      i.close
-      threads = [
-        Thread.new{
-          while (line = o.gets) do
-            STDOUT.puts line.toutf8
-          end
-        },
-        Thread.new{
-          while (line = e.gets) do
-            STDERR.puts line.toutf8
-          end
-        }
-      ].each{|thread| thread.join}
-      status = w.value
-      exitCode = status.exitstatus.nil? ? status.termsig : status.exitstatus
-      if block_given?
-        yield(status)
-      elsif exitCode != 0
-        exit(exitCode)
-      end
-    }
+    status = nil
+    begin
+      Open3.popen3(command){|i, o, e, w|
+        i.close
+        threads = [
+          Thread.new{while (line = o.gets) do STDOUT.puts line.toutf8 end},
+          Thread.new{while (line = e.gets) do STDERR.puts line.toutf8 end}
+        ].each{|thread| thread.join}
+        status = w.value
+        if !block_given?
+          return if status.exitstatus == 0
+          exit(false)
+        end
+      }
+    rescue
+      exit(false) if !block_given?
+    end
+    yield(status)
   end
 end
